@@ -14,4 +14,4 @@ Download [the latest release (.zip)](https://github.com/domnulvlad/KLineKWP1281L
 **Read the documentation on [the wiki](https://github.com/domnulvlad/KLineKWP1281Lib_ESP32/wiki)!**
 
 ## Contact
-For any inquiries, you can open an issue or contact me at [ne555timer@yahoo.com](mailto:ne555timer@yahoo.com).
+For any inquiries, you can open an issue or contact me at [ne555timer@yahoo.com](mailto:ne555timer@yahoo.com) (but don't include any links in the email, as it will be marked as spam).
