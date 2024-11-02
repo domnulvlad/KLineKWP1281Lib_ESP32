@@ -3,17 +3,17 @@
     04.Continuous_measurement_test.ino
 
   Description:
-    Demonstrates how to read a measurement block continuously.
+    Demonstrates how to read a measurement group continuously.
 
   Notes:
-    *You can change which block to read by modifying the #define below.
-    *This block will be read continuously while the sketch is running.
+    *You can change which group to read by modifying the #define below.
+    *This group will be read continuously while the sketch is running.
     *It is not necessary to maintain the connection with "diag.update();" in the loop, because any request will have the same effect (update() must
     be used in periods of inactivity).
 */
 
-// Change which block to read.
-#define BLOCK_TO_READ 1
+// Change which group to read.
+#define GROUP_TO_READ 1
 
 /*
   ***Uncomment the appropriate options in the "configuration.h" file!
@@ -41,10 +41,9 @@
 // Debugging can be enabled in the "Tools>Core Debug Level" menu in the IDE, in order to print connection-related info on the Serial Monitor.
 KLineKWP1281Lib diag(beginFunction, endFunction, sendFunction, receiveFunction, TX_pin);
 
-// Normally, each measurement takes 3 bytes, and a block can store up to 4 measurements.
-// There are some measurements which take more space.
-// Consider increasing the size of this buffer if you get "Error reading measurements!":
-uint8_t measurements[3 * 4];
+// Please find more information on the topic of KWP1281 measurement groups in the "03.Full_measurement_test" example.
+uint8_t measurement_buffer[80];
+uint8_t measurement_body_buffer[4];
 
 void setup()
 {
@@ -74,87 +73,223 @@ void demo_task(void *args)
   diag.connect(connect_to_module, module_baud_rate, false);
   
   // A task must either have an infinite loop, or delete itself.
-  printf("Requesting block %d continuously.\n", BLOCK_TO_READ);
+  printf("Requesting group %d continuously.\n", GROUP_TO_READ);
   while (true)
   {
-    // Show the parameters in the requested block.
-    showMeasurements(BLOCK_TO_READ);
+    // Show the parameters in the requested group.
+    showMeasurements(GROUP_TO_READ);
   }
 }
 
-void showMeasurements(uint8_t block)
+/*
+
+  -The variables used for "header+body" groups are stored globally.
+  -Normally, the flag `received_group_header` should be reset to false when requesting a new group.
+  -This example only requests one group, so it isn't necessary; if the group was "header+body" once, it will always be like that.
+  
+  -You could also keep `received_group_header` local to the showMeasurements() function, and do diag.update() before each request,
+  to ensure you receive the [Header].
+  -Of course, this would negatively impact performance, since you need to receive more data from the module each time you read the group.
+
+*/
+
+// This flag keeps track if a [Header] was received for the current group, meaning it's of the "header+body" type.
+bool received_group_header = false;
+
+// This will contain the amount of measurements received in the [Header] of a "header+body" group.
+uint8_t amount_of_measurements_in_header = 0;
+
+
+void showMeasurements(uint8_t group)
 {
-  // This will contain the amount of measurements in the current block, after calling the readGroup() function.
+  // This will contain the amount of measurements in the current group, after calling the readGroup() function.
   uint8_t amount_of_measurements = 0;
   
   /*
+    -For modules which report measuring groups in the "header+body" mode, it is important to do update() when requesting a new group,
+    so the module sends the [Header].
+    -If it's the first request, it's not necessary; the module will always send the [Header] for the first time.
+    -Since this example only requests one group, it would decrease performance (measurement rate) to do update() every time, since it would cause the module
+    to send the [Header] over and over again, and it takes time to receive it, instead of only receiving it once, at the beginning.
+  */
+  // diag.update();
+  
+  /*
     The readGroup() function can return:
-      *KLineKWP1281Lib::SUCCESS - received measurements
-      *KLineKWP1281Lib::FAIL    - the requested block does not exist
-      *KLineKWP1281Lib::ERROR   - communication error
+      KLineKWP1281Lib::FAIL                - the requested group does not exist
+      KLineKWP1281Lib::ERROR               - communication error
+      KLineKWP1281Lib::SUCCESS             - received measurements
+      KLineKWP1281Lib::GROUP_BASIC_SETTING - received a [Basic settings] measurement; the buffer contains 10 raw values
+      KLineKWP1281Lib::GROUP_HEADER        - received the [Header] for a "header+body" group; need to read again to get the [Body]
+      KLineKWP1281Lib::GROUP_BODY          - received the [Body] for a "header+body" group
   */
   
-  // Read the requested group and store the return value.
-  KLineKWP1281Lib::executionStatus readGroup_status = diag.readGroup(amount_of_measurements, block, measurements, sizeof(measurements));
+  // Read the requested group and store the returneded value.
+  KLineKWP1281Lib::executionStatus readGroup_status;
+  // If the group is not of "header+body" type, or if it is and this is the first request, we don't have a [Header] (yet), so `received_group_header=false`.
+  // The response to this request will be stored in the larger array.
+  // If it is in fact of "header+body" type, the [Header] will be stored in this array.
+  if (!received_group_header)
+  {
+    readGroup_status = diag.readGroup(amount_of_measurements, group, measurement_buffer, sizeof(measurement_buffer));
+  }
+  // If the group is of "header+body" type, and this is not the first request, it means we have a header, so `received_group_header=true`.
+  // The response to this request will be stored in the smaller array, because it should be the [Body].
+  else
+  {
+    readGroup_status = diag.readGroup(amount_of_measurements, group, measurement_body_buffer, sizeof(measurement_body_buffer));
+  }
   
-  // Check the return value.
+  // Check the returned value.
   switch (readGroup_status)
   {
     case KLineKWP1281Lib::ERROR:
-      printf("Error reading measurements!\n");
+      {
+        printf("Error reading group!\n");
+      }
+      // There is no reason to continue, exit the function.
       return;
     
     case KLineKWP1281Lib::FAIL:
-      printf("Block %d does not exist!\n", block);
+      {
+        printf("Group %d does not exist!", group);
+      }
+      // There is no reason to continue, exit the function.
       return;
+
+    case KLineKWP1281Lib::GROUP_BASIC_SETTINGS:
+      {
+        // If we have a [Header], it means this group sends responses of "header+body" type.
+        // So, at this point, it doesn't make sense to receive something other than a [Body].
+        if (received_group_header)
+        {
+          printf("Error reading body! (got basic settings)\n");
+          return;
+        }
+
+        // We have 10 raw values in the `measurement_buffer` array.
+        printf("Basic settings in group %d: ", group);
+        for (uint8_t i = 0; i < 10; i++)
+        {
+          printf("%d ", measurement_buffer[i]);
+        }
+        printf("\n");
+      }
+      // We have nothing else to display, exit the function.
+      return;
+
+    case KLineKWP1281Lib::GROUP_HEADER:
+      {
+        // If we have a [Header], it means this group sends responses of "header+body" type.
+        // So, at this point, it doesn't make sense to receive something other than a [Body].
+        if (received_group_header)
+        {
+          printf("Error reading body! (got header)\n");
+          return;
+        }
+
+        // Set the flag to indicate that a header was received, making this a "header+body" group response.
+        received_group_header = true;
+
+        // Store the number of measurements received in the header.
+        amount_of_measurements_in_header = amount_of_measurements;
+      }
+      // We have nothing to display yet, the next readGroup() will get the actual data; exit the function.
+      return;
+
+    case KLineKWP1281Lib::GROUP_BODY:
+      {
+        // If we don't have a [Header], it doesn't make sense to receive a [Body].
+        if (!received_group_header)
+        {
+          printf("Error reading header! (got body)\n");
+          return;
+        }
+      }
+      // If we have the [Header], now we also have the [Body]; execute the code after the switch().
+      break;
     
     // Execute the code after the switch().
     case KLineKWP1281Lib::SUCCESS:
       break;
   }
   
-  // If the block was read successfully, display its measurements.
-  printf("Block %d:\n", block);
-  
+  // If the group was read successfully, display its measurements.
+  printf("Group %d:\n", group);
+    
   // Display each measurement.
   for (uint8_t i = 0; i < 4; i++)
   {
-    //Format the values with a leading tab.
-    printf("\t");
+    // Format the values with a leading tab.
+    printf("    ");
     
     /*
       The getMeasurementType() function can return:
-        *KLineKWP1281Lib::UNKNOWN - index out of range (measurement doesn't exist in block)
-        *KLineKWP1281Lib::VALUE   - regular measurement, with a value and units
-        *KLineKWP1281Lib::TEXT    - text measurement
+        KLineKWP1281Lib::UNKNOWN - index out of range (the measurement doesn't exist in the group) or the formula is invalid/not-applicable
+        KLineKWP1281Lib::VALUE   - regular measurement, with a value and units
+        KLineKWP1281Lib::TEXT    - text measurement
     */
+
+    // Get the current measurement's type.
+    KLineKWP1281Lib::measurementType measurement_type;
+    if (!received_group_header)
+    {
+      measurement_type = KLineKWP1281Lib::getMeasurementType(i, amount_of_measurements, measurement_buffer, sizeof(measurement_buffer));
+    }
+    // For "header+body" measurements, you need to use this other function that specifically parses headers instead of regular responses.
+    else
+    {
+      measurement_type = KLineKWP1281Lib::getMeasurementTypeFromHeader(i, amount_of_measurements_in_header, measurement_buffer, sizeof(measurement_buffer));
+    }
     
-    //Get the current measurement's type and check the return value.
-    switch (KLineKWP1281Lib::getMeasurementType(i, amount_of_measurements, measurements, sizeof(measurements)))
+    // Check the returned value.
+    switch (measurement_type)
     {
       // "Value and units" type
       case KLineKWP1281Lib::VALUE:
       {
-        // This will hold the measurement's units.
+        // The measurement's units will be copied into this array, so they can be displayed.
         char units_string[16];
         
-        // Display the calculated value, with the recommended amount of decimals.
-        // The function getMeasurementUnits() returns the same string that it's given. It's the same as units_string.
-        printf("%.*lf %s\n",
-               KLineKWP1281Lib::getMeasurementDecimals(i, amount_of_measurements, measurements, sizeof(measurements)),
-               KLineKWP1281Lib::getMeasurementValue(i, amount_of_measurements, measurements, sizeof(measurements)),
-               KLineKWP1281Lib::getMeasurementUnits(i, amount_of_measurements, measurements, sizeof(measurements), units_string, sizeof(units_string)));
+        // Regular mode:
+        if (!received_group_header)
+        {
+          // Display the calculated value, with the recommended amount of decimals.
+          // The function getMeasurementUnits() returns the same string that it's given. It's the same as units_string.
+          printf("%.*lf %s\n",
+                 KLineKWP1281Lib::getMeasurementDecimals(i, amount_of_measurements, measurement_buffer, sizeof(measurement_buffer)),
+                 KLineKWP1281Lib::getMeasurementValue(i, amount_of_measurements, measurement_buffer, sizeof(measurement_buffer)),
+                 KLineKWP1281Lib::getMeasurementUnits(i, amount_of_measurements, measurement_buffer, sizeof(measurement_buffer), units_string, sizeof(units_string)));
+        }
+        // "Header+body" mode:
+        else
+        {
+          // Display the calculated value, with the recommended amount of decimals.
+          // The function getMeasurementUnitsFromHeaderBody() returns the same string that it's given. It's the same as units_string.
+          printf("%.*lf %s\n",
+                 KLineKWP1281Lib::getMeasurementDecimalsFromHeader(i, amount_of_measurements_in_header, measurement_buffer, sizeof(measurement_buffer)),
+                 KLineKWP1281Lib::getMeasurementValueFromHeaderBody(i, amount_of_measurements_in_header, measurement_buffer, sizeof(measurement_buffer), amount_of_measurements, measurement_body_buffer, sizeof(measurement_body_buffer)),
+                 KLineKWP1281Lib::getMeasurementUnitsFromHeaderBody(i, amount_of_measurements_in_header, measurement_buffer, sizeof(measurement_buffer), amount_of_measurements, measurement_body_buffer, sizeof(measurement_body_buffer), units_string, sizeof(units_string)));          
+        }
       }
       break;
       
       // "Text" type
       case KLineKWP1281Lib::TEXT:
       {
-        // This will hold the measurement's text.
+        // The measurement's text will be copied into this array, so it can be displayed.
         char text_string[16];
-        
-        // The function getMeasurementText() returns the same string that it's given. It's the same as text_string.
-        printf("%s\n", KLineKWP1281Lib::getMeasurementText(i, amount_of_measurements, measurements, sizeof(measurements), text_string, sizeof(text_string)));
+
+        if (!received_group_header)
+        {
+          // The function getMeasurementText() returns the same string that it's given. It's the same as text_string.
+          printf("%s\n", KLineKWP1281Lib::getMeasurementText(i, amount_of_measurements, measurement_buffer, sizeof(measurement_buffer), text_string, sizeof(text_string)));
+        }
+        else
+        {
+          // The function getMeasurementTextFromHeaderBody() returns the same string that it's given. It's the same as text_string.
+          printf("%s\n", KLineKWP1281Lib::getMeasurementTextFromHeaderBody(i, amount_of_measurements_in_header, measurement_buffer, sizeof(measurement_buffer), amount_of_measurements, measurement_body_buffer, sizeof(measurement_body_buffer), text_string, sizeof(text_string)));
+        }
       }
       break;
       

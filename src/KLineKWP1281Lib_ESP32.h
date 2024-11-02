@@ -94,7 +94,12 @@ class KLineKWP1281Lib
     enum executionStatus {
       FAIL,
       SUCCESS,
-      ERROR
+      ERROR,
+      
+      // Only used for readGroup():
+      GROUP_BASIC_SETTINGS, // A "basic settings" response type is encountered instead of regular measurements
+      GROUP_HEADER,         // The header of a "header+body" response type is encountered
+      GROUP_BODY            // The body of a "header+body" response type is encountered
     };
 
     // Measurement types
@@ -207,11 +212,11 @@ class KLineKWP1281Lib
     // Read a group (block) of measurements
     executionStatus readGroup(uint8_t &amount_of_measurements, uint8_t group, uint8_t* measurement_buffer, size_t measurement_buffer_size);
 
-    // Get the 3 significant bytes of a measurement (enough for all measurements of type VALUE)
+    // Get the 3 significant bytes of a measurement (enough for most measurements of type VALUE)
     static uint8_t getFormula(uint8_t measurement_index, uint8_t amount_of_measurements, uint8_t *measurement_buffer, size_t measurement_buffer_size);
     static uint8_t getNWb(uint8_t measurement_index, uint8_t amount_of_measurements, uint8_t *measurement_buffer, size_t measurement_buffer_size);
     static uint8_t getMWb(uint8_t measurement_index, uint8_t amount_of_measurements, uint8_t *measurement_buffer, size_t measurement_buffer_size);
-    // Get the data and length of a measurement (necessary for some measurements of type TEXT)
+    // Get the data and length of a measurement (necessary for some measurements of type TEXT and some of type VALUE)
     static uint8_t *getMeasurementData(uint8_t measurement_index, uint8_t amount_of_measurements, uint8_t *measurement_buffer, size_t measurement_buffer_size);
     static uint8_t getMeasurementDataLength(uint8_t measurement_index, uint8_t amount_of_measurements, uint8_t *measurement_buffer, size_t measurement_buffer_size);
 
@@ -235,6 +240,35 @@ class KLineKWP1281Lib
     // Get the recommended decimal places of a measurement (of type VALUE) - only formula byte needed
     static uint8_t getMeasurementDecimals(uint8_t measurement_index, uint8_t amount_of_measurements, uint8_t* measurement_buffer, size_t measurement_buffer_size);
     static uint8_t getMeasurementDecimals(uint8_t formula);
+    
+    // Get the formula of a measurement from a header of a header+body response
+    static uint8_t getFormulaFromHeader(uint8_t measurement_index, uint8_t amount_of_measurements, uint8_t *header_buffer, size_t header_buffer_size);
+    // Get the constant byte of a measurement from a header of a header+body response
+    static uint8_t getNWbFromHeader(uint8_t measurement_index, uint8_t amount_of_measurements, uint8_t *header_buffer, size_t header_buffer_size);
+    // Get the live data byte of a measurement from a body of a header+body response
+    static uint8_t getMWbFromBody(uint8_t measurement_index, uint8_t amount_of_measurements, uint8_t *body_buffer, size_t body_buffer_size);
+    // Get the data table and its length of a measurement from a header of a header+body response.
+    static uint8_t *getDataTableFromHeader(uint8_t measurement_index, uint8_t amount_of_measurements, uint8_t *header_buffer, size_t header_buffer_size);
+    static uint8_t getDataTableLengthFromHeader(uint8_t measurement_index, uint8_t amount_of_measurements, uint8_t *header_buffer, size_t header_buffer_size);
+    
+    // Get a measurement's type from a group reading of type header+body - needed: [header array] / [formula]
+    static measurementType getMeasurementTypeFromHeader(uint8_t measurement_index, uint8_t amount_of_measurements, uint8_t *header_buffer, size_t header_buffer_size);
+    static measurementType getMeasurementTypeFromHeader(uint8_t formula);
+    // Get the calculated value of a measurement of type VALUE from a group reading of type header+body - needed: [header array, body array] / [formula, NWb, MWb, data table, length]
+    static double getMeasurementValueFromHeaderBody(uint8_t measurement_index, uint8_t amount_of_measurements_in_header, uint8_t *header_buffer, size_t header_buffer_size, uint8_t amount_of_measurements_in_body, uint8_t *body_buffer, size_t body_buffer_size);
+    static double getMeasurementValueFromHeaderBody(uint8_t formula, uint8_t NWb, uint8_t MWb, uint8_t *data_table, uint8_t data_table_length);
+    // Get the units of a measurement of type VALUE from a group reading of type header+body - needed: [header array, body array] / [formula, NWb, MWb]
+    static char* getMeasurementUnitsFromHeaderBody(uint8_t measurement_index, uint8_t amount_of_measurements_in_header, uint8_t *header_buffer, size_t header_buffer_size, uint8_t amount_of_measurements_in_body, uint8_t *body_buffer, size_t body_buffer_size, char* str, size_t string_size);
+    static char* getMeasurementUnitsFromHeaderBody(uint8_t formula, uint8_t NWb, uint8_t MWb, char* str, size_t string_size);
+    // Get the text of a measurement of type TEXT from a group reading of type header+body - needed: [header array, body array] / [formula, NWb, MWb, data table, length]
+    static char* getMeasurementTextFromHeaderBody(uint8_t measurement_index, uint8_t amount_of_measurements_in_header, uint8_t *header_buffer, size_t header_buffer_size, uint8_t amount_of_measurements_in_body, uint8_t *body_buffer, size_t body_buffer_size, char* str, size_t string_size);
+    static char* getMeasurementTextFromHeaderBody(uint8_t formula, uint8_t NWb, uint8_t MWb, uint8_t *data_table, uint8_t data_table_length, char* str, size_t string_size);
+    // Get the length of the text of a measurement of type TEXT from a group reading of type header+body - needed: [header array, body array] / [formula, NWb, MWb, data table, length]
+    static size_t getMeasurementTextLengthFromHeaderBody(uint8_t measurement_index, uint8_t amount_of_measurements_in_header, uint8_t *header_buffer, size_t header_buffer_size, uint8_t amount_of_measurements_in_body, uint8_t *body_buffer, size_t body_buffer_size);
+    static size_t getMeasurementTextLengthFromHeaderBody(uint8_t formula, uint8_t NWb, uint8_t MWb, uint8_t *data_table, uint8_t data_table_length);
+    // Get the recommended decimal places of a measurement from a group reading of type header+body - needed: [header array] / [formula]
+    static uint8_t getMeasurementDecimalsFromHeader(uint8_t measurement_index, uint8_t amount_of_measurements, uint8_t *header_buffer, size_t header_buffer_size);
+    static uint8_t getMeasurementDecimalsFromHeader(uint8_t formula);
 
     // Read a chunk of ROM/EEPROM
     executionStatus readROM(uint8_t chunk_size, uint16_t start_address, size_t &bytes_received, uint8_t* memory_buffer, uint8_t memory_buffer_size);
@@ -247,6 +281,10 @@ class KLineKWP1281Lib
     static size_t getOutputTestDescriptionLength(uint16_t output_test);
 
   private:
+    // Formula A0 needs 8 negative powers of 10 for calculation.
+    // They are defined at the bottom of the .cpp file.
+    static const double negative_pow_10[8];
+    
     ///VARIABLES/TYPES
     static const uint8_t KWP_ACKNOWLEDGE             = 0x09; // the module has no more data to send
     static const uint8_t KWP_REFUSE                  = 0x0A; // the module can not fulfill a request
@@ -262,7 +300,9 @@ class KLineKWP1281Lib
     static const uint8_t KWP_REQUEST_ADAPTATION_SAVE = 0x2A; // response: KWP_RECEIVE_ADAPTATION (ok) / KWP_REFUSE (invalid channel or value)
     static const uint8_t KWP_REQUEST_GROUP_READING   = 0x29; // response: KWP_RECEIVE_GROUP_READING (ok) / KWP_ACKNOWLEDGE (empty group) / KWP_REFUSE (invalid group)
     static const uint8_t KWP_REQUEST_GROUP_READING_0 = 0x12; // response: KWP_RECEIVE_GROUP_READING (ok) / KWP_ACKNOWLEDGE (empty group) / KWP_REFUSE (invalid group)
+    static const uint8_t KWP_REQUEST_READ_RAM        = 0x01; // not implemented
     static const uint8_t KWP_REQUEST_READ_ROM        = 0x03; // response: KWP_RECEIVE_ROM (ok) / KWP_REFUSE (reading ROM not supported or invalid parameters)
+    static const uint8_t KWP_REQUEST_READ_EEPROM     = 0x19; // not implemented
     static const uint8_t KWP_REQUEST_OUTPUT_TEST     = 0x04; // response: KWP_RECEIVE_OUTPUT_TEST (ok) / KWP_REFUSE (output tests not supported)
     static const uint8_t KWP_REQUEST_BASIC_SETTING   = 0x28; // response: KWP_RECEIVE_BASIC_SETTING (ok) / KWP_ACKNOWLEDGE (empty group) / KWP_REFUSE (invalid channel or not supported)
     static const uint8_t KWP_REQUEST_BASIC_SETTING_0 = 0x11; // response: KWP_RECEIVE_BASIC_SETTING (ok) / KWP_ACKNOWLEDGE (empty group) / KWP_REFUSE (invalid channel or not supported)
@@ -270,6 +310,7 @@ class KLineKWP1281Lib
     static const uint8_t KWP_RECEIVE_ID_DATA         = 0xF6; // request: connect/KWP_REQUEST_EXTRA_ID/KWP_REQUEST_RECODE
     static const uint8_t KWP_RECEIVE_FAULT_CODES     = 0xFC; // request: KWP_REQUEST_FAULT_CODES
     static const uint8_t KWP_RECEIVE_ADAPTATION      = 0xE6; // request: KWP_REQUEST_ADAPTATION/KWP_REQUEST_ADAPTATION_TEST/KWP_REQUEST_ADAPTATION_SAVE
+    static const uint8_t KWP_RECEIVE_GROUP_HEADER    = 0x02; // request: KWP_REQUEST_GROUP_READING
     static const uint8_t KWP_RECEIVE_GROUP_READING   = 0xE7; // request: KWP_REQUEST_GROUP_READING
     static const uint8_t KWP_RECEIVE_ROM             = 0xFD; // request: KWP_REQUEST_READ_ROM
     static const uint8_t KWP_RECEIVE_OUTPUT_TEST     = 0xF5; // request: KWP_REQUEST_OUTPUT_TEST
@@ -297,6 +338,7 @@ class KLineKWP1281Lib
       TYPE_REFUSE,
       TYPE_FAULT_CODES,
       TYPE_ADAPTATION,
+      TYPE_GROUP_HEADER,
       TYPE_GROUP_READING,
       TYPE_ROM,
       TYPE_OUTPUT_TEST,
@@ -337,6 +379,10 @@ class KLineKWP1281Lib
 
       INVALID_MEASUREMENT_GROUP,
       RECEIVED_EMPTY_GROUP,
+      RECEIVED_GROUP_HEADER,
+      INVALID_GROUP_HEADER_MAP_LENGTH,
+      RECEIVED_GROUP_BODY_OR_BASIC_SETTING,
+      INVALID_GROUP_BODY_OR_BASIC_SETTING_LENGTH,
       RECEIVED_GROUP,
 
       READ_ROM_NOT_SUPPORTED,
@@ -424,7 +470,7 @@ class KLineKWP1281Lib
     void show_debug_command_description(bool direction, uint8_t command);
 
     // Helper functions
-    static bool is_long_block(uint8_t formula);
+    static uint8_t get_measurement_length(uint8_t *buffer, uint8_t bytes_received, uint8_t buffer_index);
     static double ToSigned(double MW);
     static double ToSigned(double NW, double MW);
     static double To16Bit(double NW, double MW);
